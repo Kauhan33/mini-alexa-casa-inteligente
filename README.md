@@ -47,14 +47,15 @@ Você: Abrir a luz da sala
 Alexa: Desculpe, não é possível 'abrir' a luz.
 ```
 
-## Voz (reconhecimento + resposta em áudio)
+## Voz (palavra-chave + resposta em áudio)
 
 - **Reconhecimento:** requer microfone e internet (transcrição via Google Web Speech
   API, pt-BR, sem chave necessária para uso limitado).
 - **Resposta em áudio:** usa a síntese de voz do próprio sistema operacional (SAPI5 no
-  Windows), então funciona offline. Se o Windows não tiver um pacote de voz em
-  português instalado, cai automaticamente para a voz padrão (geralmente em inglês) —
-  para instalar uma voz pt-BR: Configurações → Hora e Idioma → Voz → Adicionar vozes.
+  Windows), então funciona offline, sempre tentando uma voz **pt-BR** primeiro. Se o
+  Windows não tiver nenhum pacote de voz em português instalado, o programa avisa na
+  tela e cai para a voz padrão — para instalar uma voz pt-BR: Configurações → Hora e
+  Idioma → Voz → Adicionar vozes.
 
 Instale as dependências extras primeiro:
 
@@ -73,10 +74,21 @@ python main.py            # modo texto normal...
 Você: voz                 # ...mas digite "voz" (ou "ouvir"/"falar") para ativar o modo de voz
 ```
 
-No **modo de voz contínuo**, a Alexa fica ouvindo o microfone repetidamente — cada
-comando reconhecido é processado e respondido em texto **e** em áudio — até você dizer
-ou **digitar** "sair" (digitar continua funcionando nesse modo: roda em paralelo, numa
-thread separada, então não é preciso esperar a escuta para conseguir sair).
+No **modo de voz contínuo**, a Alexa fica ouvindo o microfone o tempo todo, mas só
+reage a frases que começam com a palavra-chave **"Alexa"** — qualquer outra fala
+captada (conversa de fundo, TV, etc.) é **ignorada em silêncio**, sem nenhuma resposta:
+
+```
+Você (voz): isso é só uma conversa qualquer no fundo     <- nunca aparece: foi ignorada
+Você (voz): Alexa, ligar a luz da sala
+Alexa: Ok, ligando a luz na sala.                          (falado em áudio também)
+```
+
+Toda resposta dada nesse modo — tanto por comando falado quanto digitado — é falada em
+áudio além de impressa na tela. Para encerrar: diga **"Alexa, sair"** ou apenas
+**digite** "sair" (digitar não precisa da palavra-chave, já que digitar já é um ato
+deliberado; e roda em paralelo numa thread separada, então não é preciso esperar a
+escuta atual terminar para conseguir sair).
 
 Se a biblioteca de reconhecimento não estiver instalada ou não houver microfone, o
 programa avisa e continua funcionando normalmente em modo texto — a voz é opcional em

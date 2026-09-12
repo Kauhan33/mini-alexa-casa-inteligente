@@ -74,26 +74,46 @@ def ouvir_comando(idioma: str = "pt-BR", timeout: float = 5.0, limite_frase: flo
 
 
 _motor_tts = None  # instância única do motor de síntese (lazy init)
+_aviso_sem_voz_pt_mostrado = False
 
 
 def _obter_motor_tts():
-    global _motor_tts
+    global _motor_tts, _aviso_sem_voz_pt_mostrado
     if _motor_tts is None:
         _motor_tts = pyttsx3.init()
-        _selecionar_voz_em_portugues(_motor_tts)
+        encontrou_pt = _selecionar_voz_em_portugues(_motor_tts)
+        if not encontrou_pt and not _aviso_sem_voz_pt_mostrado:
+            print(
+                "(nenhuma voz em português encontrada neste computador; usando a voz "
+                "padrão do sistema. Para instalar uma voz pt-BR no Windows: "
+                "Configurações -> Hora e Idioma -> Voz -> Adicionar vozes.)"
+            )
+            _aviso_sem_voz_pt_mostrado = True
     return _motor_tts
 
 
-def _selecionar_voz_em_portugues(motor) -> None:
-    """Procura, entre as vozes instaladas no sistema, uma em português e a
-    ativa. Se não encontrar nenhuma, mantém a voz padrão do sistema (em
+def _selecionar_voz_em_portugues(motor) -> bool:
+    """Procura, entre as vozes instaladas no sistema, uma em português do
+    Brasil e a ativa; na falta dela, aceita qualquer português. Devolve True
+    se encontrou e selecionou alguma, False se manteve a voz padrão (em
     inglês, na maioria das instalações do Windows sem pacote de idioma)."""
-    for voz in motor.getProperty("voices"):
+    vozes = motor.getProperty("voices")
+
+    for voz in vozes:
         idiomas = " ".join(str(v) for v in (getattr(voz, "languages", None) or []))
         pistas = f"{voz.id} {voz.name} {idiomas}".lower()
-        if "pt-br" in pistas or "pt_br" in pistas or "portuguese" in pistas or "português" in pistas:
+        if any(p in pistas for p in ("pt-br", "pt_br", "brazil", "brasil")):
             motor.setProperty("voice", voz.id)
-            return
+            return True
+
+    for voz in vozes:
+        idiomas = " ".join(str(v) for v in (getattr(voz, "languages", None) or []))
+        pistas = f"{voz.id} {voz.name} {idiomas}".lower()
+        if "portuguese" in pistas or "português" in pistas or "pt-pt" in pistas:
+            motor.setProperty("voice", voz.id)
+            return True
+
+    return False
 
 
 def falar(texto: str) -> None:

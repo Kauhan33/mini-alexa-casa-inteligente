@@ -8,15 +8,20 @@ Uso:
 
 No modo digitado, digite "voz" (ou "ouvir"/"falar") a qualquer momento para
 entrar no modo de voz contínuo: a Alexa fica ouvindo o microfone o tempo
-todo e responde em áudio, até você dizer OU digitar "sair" (digitar
-continua funcionando nesse modo — roda em paralelo, numa thread separada,
-então não é preciso esperar a escuta para poder sair).
+todo, mas só reage a frases que começam com a palavra-chave "Alexa" (ex.:
+"Alexa, ligar a luz da sala") — qualquer outra fala captada é ignorada em
+silêncio, sem nenhuma resposta. Toda resposta é falada em áudio (pt-BR,
+quando disponível) além de impressa na tela, até você dizer OU digitar
+"sair" (digitar continua funcionando nesse modo — roda em paralelo, numa
+thread separada, então não é preciso esperar a escuta para poder sair; e
+não precisa da palavra-chave, já que digitar já é um ato deliberado).
 """
 
 from __future__ import annotations
 
 import sys
 import threading
+import unicodedata
 
 from lexer import analisar_lexico
 from semantic import CasaInteligente, interpretar
@@ -35,6 +40,7 @@ COMANDOS_DEMO = [
 
 COMANDOS_SAIR = ("sair", "exit", "quit")
 COMANDOS_PARA_ENTRAR_EM_VOZ = ("voz", "ouvir", "falar")
+PALAVRA_CHAVE = "alexa"
 
 
 def processar(frase: str, casa: CasaInteligente, verboso: bool = True) -> str:
@@ -51,10 +57,33 @@ def rodar_demo() -> None:
         print(f"Alexa: {processar(frase, casa)}")
 
 
+def _sem_acentos(texto: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn"
+    )
+
+
+def _extrair_comando_apos_palavra_chave(frase: str) -> str | None:
+    """
+    Filtro da palavra-chave: só devolve algo se `frase` começar com "Alexa"
+    (sem diferenciar maiúsculas/acentos/pontuação). Nesse caso, devolve o
+    restante da frase (o comando de fato). Caso contrário, devolve None —
+    o chamador deve ignorar a frase por completo, sem responder nada.
+    """
+    partes = frase.strip().split(maxsplit=1)
+    if not partes:
+        return None
+    primeira_palavra = _sem_acentos(partes[0]).lower().strip(",.!?;:")
+    if primeira_palavra != PALAVRA_CHAVE:
+        return None
+    return partes[1].strip(" ,.!?;:") if len(partes) > 1 else ""
+
+
 def _thread_teclado(evento_parar: threading.Event, casa: CasaInteligente, trava: threading.Lock) -> None:
     """Roda em paralelo ao loop de voz: deixa digitar comandos (ou "sair")
-    sem precisar esperar o microfone. Só existe enquanto o modo de voz
-    contínuo estiver ativo (thread daemon: encerra sozinha com o programa)."""
+    sem precisar esperar o microfone, e sem precisar da palavra-chave (digitar
+    já é um ato deliberado). Só existe enquanto o modo de voz contínuo
+    estiver ativo (thread daemon: encerra sozinha com o programa)."""
     while not evento_parar.is_set():
         try:
             texto = input().strip()
@@ -75,12 +104,15 @@ def _thread_teclado(evento_parar: threading.Event, casa: CasaInteligente, trava:
 
 
 def rodar_modo_voz_continuo(casa: CasaInteligente) -> None:
-    """Fica ouvindo o microfone repetidamente (cada comando reconhecido é
-    processado e respondido em texto + áudio) até "sair" ser dito ou
-    digitado. Ao encerrar, termina o programa inteiro."""
-    print("Modo de voz contínuo: fale um comando quando quiser.")
-    print("Diga ou digite 'sair' a qualquer momento para encerrar.\n")
-    falar("Modo de voz ativado. Pode falar.")
+    """Fica ouvindo o microfone repetidamente. Só reage a frases que
+    começam com a palavra-chave "Alexa" — o resto é ignorado em silêncio.
+    Cada comando válido é processado e respondido em texto + áudio, até
+    "sair" ser dito (depois de "Alexa") ou digitado. Ao encerrar, termina
+    o programa inteiro."""
+    print("Modo de voz contínuo: comece o comando com a palavra-chave 'Alexa'")
+    print("(ex.: \"Alexa, ligar a luz da sala\"). Fala sem essa palavra é ignorada.")
+    print("Diga 'Alexa, sair' ou digite 'sair' a qualquer momento para encerrar.\n")
+    falar("Modo de voz ativado. Pode falar comigo dizendo Alexa antes do comando.")
 
     evento_parar = threading.Event()
     trava = threading.Lock()  # protege o estado da casa contra voz e teclado ao mesmo tempo
@@ -88,7 +120,7 @@ def rodar_modo_voz_continuo(casa: CasaInteligente) -> None:
 
     while not evento_parar.is_set():
         try:
-            frase = ouvir_comando(timeout=3.0)
+            frase_ouvida = ouvir_comando(timeout=3.0)
         except ErroReconhecimento as erro:
             # silêncio (ninguém falou dentro do timeout) é normal aqui —
             # só tenta ouvir de novo, sem poluir a tela com esse aviso
@@ -96,13 +128,24 @@ def rodar_modo_voz_continuo(casa: CasaInteligente) -> None:
                 print(f"Alexa: {erro}")
             continue
 
-        print(f"Você (voz): {frase}")
-        if frase.strip().lower() in COMANDOS_SAIR:
+        comando = _extrair_comando_apos_palavra_chave(frase_ouvida)
+        if comando is None:
+            continue  # sem a palavra-chave no início: ignora por completo, sem responder
+
+        print(f"Você (voz): {frase_ouvida}")
+
+        if not comando:
+            resposta = "Diga um comando depois de 'Alexa'."
+            print(f"Alexa: {resposta}")
+            falar(resposta)
+            continue
+
+        if comando.lower() in COMANDOS_SAIR:
             evento_parar.set()
             break
 
         with trava:
-            resposta = processar(frase, casa, verboso=False)
+            resposta = processar(comando, casa, verboso=False)
         print(f"Alexa: {resposta}")
         falar(resposta)
 
