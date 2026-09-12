@@ -16,9 +16,9 @@ análise semântica — ver [enunciado.md](enunciado.md).
    simulado da casa (`CasaInteligente`) e gera a resposta em texto, como a Alexa faria.
 3. **Execução** ([main.py](main.py)): laço interativo que lê frases do usuário e mostra
    a resposta; também tem um modo `--demo` com comandos de exemplo.
-4. **Reconhecimento de voz** ([voice.py](voice.py)) *(opcional)*: transcreve um comando
-   falado pelo microfone em texto e entrega para o mesmo pipeline léxico/semântico —
-   a voz não tem um caminho de interpretação separado, é só outra forma de "digitar".
+4. **Voz** ([voice.py](voice.py)) *(opcional)*: transcreve um comando falado pelo
+   microfone em texto (entra no mesmo pipeline léxico/semântico — a voz não tem um
+   caminho de interpretação separado) e lê a resposta da Alexa em voz alta.
 
 ## Vocabulário reconhecido
 
@@ -47,10 +47,16 @@ Você: Abrir a luz da sala
 Alexa: Desculpe, não é possível 'abrir' a luz.
 ```
 
-## Reconhecimento de voz
+## Voz (reconhecimento + resposta em áudio)
 
-Requer microfone e conexão com a internet (a transcrição usa a Google Web Speech API,
-sem necessidade de chave para uso limitado). Instale as dependências extras primeiro:
+- **Reconhecimento:** requer microfone e internet (transcrição via Google Web Speech
+  API, pt-BR, sem chave necessária para uso limitado).
+- **Resposta em áudio:** usa a síntese de voz do próprio sistema operacional (SAPI5 no
+  Windows), então funciona offline. Se o Windows não tiver um pacote de voz em
+  português instalado, cai automaticamente para a voz padrão (geralmente em inglês) —
+  para instalar uma voz pt-BR: Configurações → Hora e Idioma → Voz → Adicionar vozes.
+
+Instale as dependências extras primeiro:
 
 ```bash
 pip install -r requirements.txt
@@ -59,16 +65,22 @@ pip install -r requirements.txt
 Depois, use de um dos dois jeitos:
 
 ```bash
-python main.py --voz      # todo turno já ouve o microfone automaticamente
+python main.py --voz      # já entra direto no modo de voz contínuo
 ```
 
 ```bash
 python main.py            # modo texto normal...
-Você: voz                 # ...mas digite "voz" (ou "ouvir"/"falar") para falar um comando avulso
+Você: voz                 # ...mas digite "voz" (ou "ouvir"/"falar") para ativar o modo de voz
 ```
 
-Se a biblioteca não estiver instalada ou não houver microfone, o programa avisa e
-continua funcionando normalmente em modo texto — o reconhecimento de voz é opcional.
+No **modo de voz contínuo**, a Alexa fica ouvindo o microfone repetidamente — cada
+comando reconhecido é processado e respondido em texto **e** em áudio — até você dizer
+ou **digitar** "sair" (digitar continua funcionando nesse modo: roda em paralelo, numa
+thread separada, então não é preciso esperar a escuta para conseguir sair).
+
+Se a biblioteca de reconhecimento não estiver instalada ou não houver microfone, o
+programa avisa e continua funcionando normalmente em modo texto — a voz é opcional em
+todos os sentidos: sem ela, o resto do programa funciona igual.
 
 ## Testes
 
