@@ -4,6 +4,7 @@ fala mockados, sem depender de hardware real) e o modo texto.
 Rodar com:  python -m unittest test_main.py -v
 """
 
+import io
 import threading
 import unittest
 from unittest.mock import MagicMock, patch
@@ -95,6 +96,76 @@ class TestAudioSomenteParaVoz(unittest.TestCase):
             main.rodar_modo_texto(casa)
 
         self.assertEqual(falas, [])
+
+
+class TestAvisoDeOuvindo(unittest.TestCase):
+    """O aviso de "ouvindo" precisa reaparecer depois de cada resposta: é o
+    sinal de que o microfone voltou a captar (durante a fala da resposta,
+    nada é ouvido)."""
+
+    def _capturar_saida(self, ouvidor):
+        casa = CasaInteligente()
+        with patch("main.falar", lambda *_: None), \
+             patch("sys.stdout", new=io.StringIO()) as saida:
+            with self.assertRaises(SystemExit):
+                main.rodar_modo_voz(casa, ouvidor)
+        return saida.getvalue()
+
+    def test_avisa_ouvindo_apos_cada_resposta(self):
+        ouvidor = _ouvidor_falso([
+            "Alexa ligar a luz da sala",
+            "Alexa ligar a luz do quarto",
+            "Alexa sair",
+        ])
+        saida = self._capturar_saida(ouvidor)
+        # uma vez na abertura + uma depois de cada um dos dois comandos
+        self.assertEqual(saida.count(main.AVISO_OUVINDO), 3)
+
+    def test_avisa_ouvindo_apos_fala_ignorada(self):
+        ouvidor = _ouvidor_falso(["conversa qualquer no fundo", "Alexa sair"])
+        saida = self._capturar_saida(ouvidor)
+        self.assertEqual(saida.count(main.AVISO_OUVINDO), 2)
+
+    def test_silencio_nao_repete_o_aviso(self):
+        """Timeout sem ninguém falar não deve poluir a tela: o aviso
+        anterior continua valendo."""
+        erro = main.ErroReconhecimento("Ninguém falou a tempo.")
+        respostas = [erro, erro, erro, "Alexa sair"]
+        respostas_iter = iter(respostas)
+
+        def ouvir(*_a, **_k):
+            valor = next(respostas_iter)
+            if isinstance(valor, Exception):
+                raise valor
+            return valor
+
+        ouvidor = MagicMock()
+        ouvidor.ouvir.side_effect = ouvir
+
+        saida = self._capturar_saida(ouvidor)
+        self.assertEqual(saida.count(main.AVISO_OUVINDO), 1)
+
+    def test_avisa_quando_nao_conseguiu_transcrever(self):
+        erro = main.ErroReconhecimento("Não consegui entender o que foi falado.")
+        respostas_iter = iter([erro, "Alexa sair"])
+
+        def ouvir(*_a, **_k):
+            valor = next(respostas_iter)
+            if isinstance(valor, Exception):
+                raise valor
+            return valor
+
+        ouvidor = MagicMock()
+        ouvidor.ouvir.side_effect = ouvir
+
+        saida = self._capturar_saida(ouvidor)
+        self.assertIn("não entendi o que foi falado", saida)
+        self.assertEqual(saida.count(main.AVISO_OUVINDO), 2)
+
+    def test_estado_inicial_e_informado_na_abertura(self):
+        ouvidor = _ouvidor_falso(["Alexa sair"])
+        saida = self._capturar_saida(ouvidor)
+        self.assertIn(main.AVISO_ESTADO_INICIAL, saida)
 
 
 class TestTecladoSemStdin(unittest.TestCase):

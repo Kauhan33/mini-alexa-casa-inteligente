@@ -51,6 +51,18 @@ COMANDOS_DEMO = [
 
 COMANDOS_SAIR = ("sair", "exit", "quit")
 
+# Marca que o microfone voltou a escutar. Reimprimir isso depois de cada
+# resposta evita o problema de falar no vazio: enquanto a assistente está
+# respondendo em áudio, nada é captado, e sem esse aviso não há como saber
+# quando o próximo comando pode ser dito. Só ASCII, para não arriscar erro
+# de codificação em terminais mais antigos.
+AVISO_OUVINDO = ">> ouvindo... (pode falar ou digitar)"
+
+AVISO_ESTADO_INICIAL = (
+    "Estado inicial: todos os dispositivos comecam desligados (e portas/cortinas "
+    "fechadas), em todos os locais."
+)
+
 
 def processar(frase: str, casa: CasaInteligente, verboso: bool = True) -> str:
     tokens = analisar_lexico(frase)
@@ -68,6 +80,11 @@ def _responder(resposta: str, com_audio: bool) -> None:
     print(f"Alexa: {resposta}")
     if com_audio:
         falar(resposta)
+
+
+def _avisar_ouvindo() -> None:
+    """Sinaliza que o microfone está livre para o próximo comando."""
+    print(AVISO_OUVINDO, flush=True)
 
 
 def rodar_demo() -> None:
@@ -106,6 +123,7 @@ def _thread_teclado(
         with trava:
             resposta = processar(texto, casa, verboso=False)
         _responder(resposta, com_audio=False)
+        _avisar_ouvindo()
 
 
 def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
@@ -114,7 +132,8 @@ def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
     comandos digitados. Ao encerrar, termina o programa inteiro."""
     print('Microfone ativo: fale começando com "Alexa" (ex.: "Alexa, ligar a luz da sala")')
     print("ou apenas digite o comando, sem palavra-chave (ex.: ligar a luz da sala).")
-    print('Para encerrar: diga "Alexa, sair" ou digite "sair".\n')
+    print('Para encerrar: diga "Alexa, sair" ou digite "sair".')
+    print(AVISO_ESTADO_INICIAL + "\n")
     falar("Estou ouvindo. Diga Alexa antes do comando.")
 
     evento_parar = threading.Event()
@@ -124,14 +143,25 @@ def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
     trava = threading.Lock()  # protege o estado da casa contra voz e teclado ao mesmo tempo
     threading.Thread(target=_thread_teclado, args=(evento_parar, casa, trava), daemon=True).start()
 
+    _avisar_ouvindo()
+
     while not evento_parar.is_set():
         try:
             frase_ouvida = ouvidor.ouvir(timeout=5.0)
         except ErroReconhecimento as erro:
-            # silêncio ou fala inintelígivel são normais aqui (o microfone
-            # está sempre aberto) — não vale poluir a tela nem responder
-            if "Ninguém falou" not in str(erro) and "não consegui entender" not in str(erro).lower():
-                print(f"Alexa: {erro}")
+            mensagem = str(erro)
+            # silêncio é o caso mais comum (o microfone fica sempre aberto):
+            # o aviso de "ouvindo" já impresso continua valendo, então não
+            # há nada a mostrar
+            if "Ninguém falou" in mensagem:
+                continue
+            # já houve som, mas não deu para transcrever: vale avisar, senão
+            # a pessoa fica esperando uma resposta que não vem
+            if "não consegui entender" in mensagem.lower():
+                print("(não entendi o que foi falado — pode repetir)")
+            else:
+                print(f"Alexa: {mensagem}")
+            _avisar_ouvindo()
             continue
 
         comando = extrair_comando(frase_ouvida)
@@ -139,12 +169,14 @@ def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
             # não era dirigido à assistente: nenhuma resposta, só o registro
             # da transcrição (ajuda a depurar o que o microfone entendeu)
             print(f"Você (voz): {frase_ouvida}  (ignorado: sem a palavra-chave 'Alexa')")
+            _avisar_ouvindo()
             continue
 
         print(f"Você (voz): {frase_ouvida}")
 
         if not comando:
             _responder("Diga um comando depois de 'Alexa'.", com_audio=True)
+            _avisar_ouvindo()
             continue
 
         if comando.lower() in COMANDOS_SAIR:
@@ -155,6 +187,7 @@ def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
         with trava:
             resposta = processar(comando, casa, verboso=False)
         _responder(resposta, com_audio=True)
+        _avisar_ouvindo()
 
     _responder("Até logo!", com_audio=saida_por_voz.is_set())
     sys.exit(0)
@@ -163,7 +196,8 @@ def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
 def rodar_modo_texto(casa: CasaInteligente) -> None:
     """Modo somente teclado (sem microfone). Não exige palavra-chave e não
     responde em áudio."""
-    print("Mini-Alexa de Casa Inteligente (digite 'sair' para encerrar)\n")
+    print("Mini-Alexa de Casa Inteligente (digite 'sair' para encerrar)")
+    print(AVISO_ESTADO_INICIAL + "\n")
 
     while True:
         try:

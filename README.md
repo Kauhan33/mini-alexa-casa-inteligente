@@ -91,6 +91,23 @@ Os particípios acompanham o dispositivo e o gênero: a luz fica *acesa/apagada*
 *aberta/fechada*, o ventilador *ligado/desligado*, o alarme *ativado/desativado*. O mesmo
 vale para os níveis — "já está no máximo", "já está no mínimo", "já está em 80".
 
+**Todo dispositivo começa desligado** (e portas/cortinas fechadas), em cada local. Isso
+explica uma resposta que parece estranha na primeira vez: mandar desligar uma luz que
+nunca foi ligada responde "já está apagada", porque ela realmente está — não há
+influência de outros locais. Cada par *(dispositivo, local)* tem estado próprio:
+
+```
+Você: ligar a luz do quarto
+Alexa: Ok, ligando a luz do quarto.
+Você: ligar a luz da cozinha
+Alexa: Ok, ligando a luz da cozinha.       <- a cozinha é independente do quarto
+Você: desligar a luz do banheiro
+Alexa: A luz do banheiro já está apagada.  <- nunca foi ligada, logo já estava apagada
+```
+
+O programa informa esse estado inicial ao iniciar, e `test_mini_alexa.py` guarda uma
+sessão real inteira como teste, justamente para garantir que os locais não se misturam.
+
 ## Funciona em qualquer computador?
 
 Sim. O núcleo do exercício (análise léxica + análise semântica) usa **apenas a biblioteca
@@ -116,6 +133,12 @@ testar, rode `python main.py --diagnostico`, que lista o que está disponível; 
   API, pt-BR, sem chave necessária para uso limitado). A escuta contínua calibra o
   ruído ambiente **uma única vez**, ao entrar no modo de voz — não a cada comando —
   para não cortar o começo da fala (e da palavra-chave) a cada novo turno.
+- **Aviso de "ouvindo":** enquanto a assistente fala a resposta, o microfone não capta
+  nada — falar nesse intervalo perde justamente o começo da frase (o "Alexa"). Por isso
+  a linha `>> ouvindo... (pode falar ou digitar)` reaparece a cada vez que o microfone
+  volta a escutar. Silêncio não repete o aviso (o anterior continua valendo), mas som
+  captado e não transcrito avisa `(não entendi o que foi falado — pode repetir)`, para
+  não deixar ninguém esperando uma resposta que não vem.
 - **Resposta em áudio, sempre em pt-BR:** tenta primeiro uma voz local do sistema
   operacional (pyttsx3/SAPI5 no Windows — offline, mais rápido), mas só usa essa via se
   encontrar uma voz **pt-BR/português** instalada. Se não encontrar nenhuma (caso comum
@@ -157,11 +180,12 @@ para digitar um comando ou "sair".
 python -m unittest discover -p "test_*.py" -v
 ```
 
-São 57 testes, cobrindo a análise léxica, a análise semântica (incluindo as ações
-redundantes), a detecção da palavra-chave com transcrições reais, a portabilidade sem
-nenhuma biblioteca de voz instalada e dois testes de regressão de bugs encontrados em uso
-real: o motor de voz que falava só na primeira resposta e o `EOFError` de stdin não
-interativo que encerrava o modo de voz na largada.
+São 65 testes, cobrindo a análise léxica, a análise semântica (incluindo as ações
+redundantes e a independência entre locais), a detecção da palavra-chave com transcrições
+reais, o aviso de "ouvindo", a portabilidade sem nenhuma biblioteca de voz instalada e
+dois testes de regressão de bugs encontrados em uso real: o motor de voz que falava só na
+primeira resposta e o `EOFError` de stdin não interativo que encerrava o modo de voz na
+largada.
 
 | Arquivo | Cobre |
 |---|---|

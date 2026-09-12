@@ -104,6 +104,45 @@ class TestEstadoJaAplicado(unittest.TestCase):
         # a luz do quarto continua apagada, então ligar deve executar
         self.assertIn("ligando", self._dizer("ligar a luz do quarto").lower())
 
+    def test_ligar_um_local_nao_afeta_outro(self):
+        """Ligar a luz do quarto não pode fazer a cozinha se considerar
+        acesa — cada (dispositivo, local) tem seu próprio estado."""
+        self._dizer("ligar a luz do quarto")
+
+        resposta = self._dizer("ligar a luz da cozinha")
+        self.assertIn("ligando", resposta.lower())
+        self.assertNotIn("já está", resposta)
+
+    def test_desligar_um_local_nao_afeta_outro(self):
+        self._dizer("ligar a luz do quarto")
+        self._dizer("ligar a luz da cozinha")
+        self._dizer("desligar a luz do quarto")
+
+        # a cozinha segue acesa, então desligar deve executar de verdade
+        resposta = self._dizer("desligar a luz da cozinha")
+        self.assertIn("desligando", resposta.lower())
+
+    def test_sequencia_completa_de_uso_real(self):
+        """Reproduz uma sessão real que levantou a suspeita de conflito
+        entre locais. Todas as respostas abaixo são as corretas: um
+        dispositivo nunca acionado começa desligado, então mandar desligá-lo
+        informa que já está apagado — sem relação com os outros locais."""
+        esperado = [
+            ("ligar a luz do quarto", "Ok, ligando a luz do quarto."),
+            ("ligar a luz do quarto", "A luz do quarto já está acesa."),
+            ("desligar a luz do quarto", "Ok, desligando a luz do quarto."),
+            ("desligar a luz do quarto", "A luz do quarto já está apagada."),
+            # banheiro e cozinha nunca foram ligados: começam apagados
+            ("desligar a luz do banheiro", "A luz do banheiro já está apagada."),
+            ("desligar a luz da cozinha", "A luz da cozinha já está apagada."),
+            ("ligar a luz da cozinha", "Ok, ligando a luz da cozinha."),
+            ("desligar a luz da cozinha", "Ok, desligando a luz da cozinha."),
+            ("ligar a luz do quarto", "Ok, ligando a luz do quarto."),
+        ]
+        for frase, resposta_esperada in esperado:
+            with self.subTest(frase=frase):
+                self.assertEqual(self._dizer(frase), resposta_esperada)
+
     def test_nivel_no_maximo_e_no_minimo(self):
         self._dizer("aumentar o ventilador da sala para 100")
         self.assertEqual(
