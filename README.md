@@ -4,6 +4,8 @@ Projeto da disciplina de **Compiladores** (8º período — UNA). Simula uma ass
 casa inteligente que interpreta comandos em linguagem natural, unindo análise léxica e
 análise semântica — ver [enunciado.md](enunciado.md).
 
+**Repositório:** https://github.com/Kauhan33/projeto-python-compiladores
+
 ## Como funciona
 
 1. **Análise léxica** ([lexer.py](lexer.py)): quebra a frase digitada em `Token`s
