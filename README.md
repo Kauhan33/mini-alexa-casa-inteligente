@@ -24,6 +24,9 @@ análise semântica — ver [enunciado.md](enunciado.md).
    que foi realmente dirigido à assistente — só falas que começam com "Alexa" contam.
    Tolera os erros de transcrição comuns do nome ("Alexia", "Alex", "Alex eu") por
    similaridade aproximada, sem confundir com fala comum.
+6. **Interface gráfica** ([gui.py](gui.py) + [visual.py](visual.py)) *(opcional)*: uma
+   janela com o círculo animado e as barras de som. Só troca a forma de entrar com o
+   comando — a análise é exatamente a mesma do terminal.
 
 ## Vocabulário reconhecido
 
@@ -92,6 +95,7 @@ python main.py            # microfone JÁ ATIVO + teclado, ao mesmo tempo (padr�
 ```
 
 ```bash
+python gui.py                # interface gráfica (ou: python main.py --gui)
 python main.py --texto       # somente teclado, sem usar o microfone
 python main.py --demo        # roda comandos de exemplo, incluindo erros propositais
 python main.py --diagnostico # mostra o que esta máquina tem disponível para voz
@@ -116,6 +120,40 @@ Alexa: Desculpe, não é possível 'abrir' a luz.   (só na tela, sem áudio)
 Você (voz): Alexa sair
 Alexa: Até logo!
 ```
+
+## Interface gráfica
+
+```bash
+python gui.py
+```
+
+![Interface gráfica do Mini-Alexa](docs/interface.png)
+
+Feita só com **tkinter**, da biblioteca padrão — nenhuma dependência a mais além das que
+a voz já pede.
+
+- **Círculo central**: gira continuamente (uma volta a cada ~20 s) e funciona como botão.
+  Clicar liga o microfone; clicar de novo desliga — nada mais interrompe a escuta.
+- **Barras ao redor**: mostram o volume **real** captado. Cada barra é um instante do
+  histórico recente, então o anel é a forma de onda do que o microfone ouviu, e não uma
+  animação aleatória. Sem captura, elas voltam ao repouso e só o círculo continua girando.
+- **Caixa de texto**: aceita comandos digitados e mostra o histórico da conversa.
+- **"sair"**, falado ou digitado, encerra o programa.
+
+Valem as mesmas regras do terminal: falando é preciso começar com "Alexa" e a resposta sai
+em áudio; digitando não precisa de palavra-chave e a resposta sai só na tela.
+
+Dois detalhes de implementação que o tkinter exige:
+
+- O `Canvas` **não faz antialiasing**, e um `create_oval` grande fica com a borda
+  visivelmente serrilhada. O círculo é gerado como imagem PPM em Python puro
+  (`visual.gerar_disco_ppm`), calculando a cobertura exata dos pixels da borda por
+  amostragem — o tkinter carrega PPM direto, sem precisar de Pillow.
+- Widgets só podem ser tocados pela thread da interface. A escuta do microfone roda em
+  uma thread separada e se comunica com a janela por uma `queue`, consumida a cada 80 ms.
+
+Se não houver tkinter na instalação do Python (acontece em alguns Linux sem
+`python3-tk`), o modo terminal continua funcionando normalmente.
 
 ## Estado da casa: ações redundantes
 

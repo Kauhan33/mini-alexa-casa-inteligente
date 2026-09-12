@@ -19,9 +19,12 @@ só outra forma de "imprimir" a resposta.
 
 from __future__ import annotations
 
+import array
+import math
 import os
 import tempfile
 import uuid
+from typing import Callable
 
 try:
     import speech_recognition as sr
@@ -79,6 +82,50 @@ def ouvir_comando(idioma: str = "pt-BR", timeout: float = 5.0, limite_frase: flo
     return _transcrever(reconhecedor, audio, idioma)
 
 
+def calcular_rms(dados: bytes, largura_amostra: int = 2) -> float:
+    """Volume (raiz média quadrática) de um pedaço de áudio PCM.
+
+    Implementado em Python puro de propósito: o módulo `audioop` da
+    biblioteca padrão foi removido no Python 3.13 e só existe lá através de
+    um pacote extra — este cálculo funciona em qualquer versão, sem
+    dependência nenhuma.
+    """
+    if largura_amostra != 2 or len(dados) < 2:
+        return 0.0
+    amostras = array.array("h")
+    amostras.frombytes(dados[: len(dados) - (len(dados) % 2)])
+    if not amostras:
+        return 0.0
+    soma_quadrados = sum(amostra * amostra for amostra in amostras)
+    return math.sqrt(soma_quadrados / len(amostras))
+
+
+class _StreamComMedidor:
+    """Envolve o stream do microfone para medir o volume de cada pedaço de
+    áudio lido, sem alterar em nada o que o reconhecedor recebe.
+
+    É o que permite desenhar barras de som fiéis ao áudio real na interface
+    gráfica: em vez de abrir um segundo stream (que competiria pelo mesmo
+    microfone), espiamos os mesmos bytes que o reconhecedor já está lendo.
+    """
+
+    def __init__(self, stream, ao_medir: Callable[[float], None], largura_amostra: int) -> None:
+        self._stream = stream
+        self._ao_medir = ao_medir
+        self._largura_amostra = largura_amostra
+
+    def read(self, tamanho: int) -> bytes:
+        dados = self._stream.read(tamanho)
+        try:
+            self._ao_medir(calcular_rms(dados, self._largura_amostra))
+        except Exception:
+            pass  # a animação nunca pode atrapalhar o reconhecimento
+        return dados
+
+    def close(self) -> None:
+        self._stream.close()
+
+
 class OuvidorContinuo:
     """
     Mantém o microfone aberto e calibrado uma única vez (no construtor), para
@@ -86,14 +133,23 @@ class OuvidorContinuo:
     ambiente a cada comando (como ouvir_comando faz) custa ~0.5s por vez e,
     se a pessoa já começar a falar durante essa calibração, a primeira
     palavra (geralmente a palavra-chave "Alexa") pode ser cortada.
+
+    `ao_medir_nivel`, quando informado, recebe o volume de cada pedaço de
+    áudio capturado — usado pela interface gráfica para animar as barras de
+    som. No modo terminal fica em None e nada muda.
     """
 
-    def __init__(self, idioma: str = "pt-BR") -> None:
+    def __init__(
+        self,
+        idioma: str = "pt-BR",
+        ao_medir_nivel: Callable[[float], None] | None = None,
+    ) -> None:
         if not STT_DISPONIVEL:
             raise ErroReconhecimento(
                 "Reconhecimento de voz não está instalado. Rode: pip install -r requirements.txt"
             )
         self._idioma = idioma
+        self._ao_medir_nivel = ao_medir_nivel
         self._reconhecedor = sr.Recognizer()
         try:
             self._microfone = sr.Microphone()
@@ -107,6 +163,10 @@ class OuvidorContinuo:
     def ouvir(self, timeout: float = 5.0, limite_frase: float = 8.0) -> str:
         try:
             with self._microfone as fonte:
+                if self._ao_medir_nivel is not None:
+                    fonte.stream = _StreamComMedidor(
+                        fonte.stream, self._ao_medir_nivel, fonte.SAMPLE_WIDTH
+                    )
                 audio = self._reconhecedor.listen(fonte, timeout=timeout, phrase_time_limit=limite_frase)
         except OSError as exc:
             raise ErroReconhecimento(

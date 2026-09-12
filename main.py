@@ -3,6 +3,7 @@ Mini-Alexa de Casa Inteligente — ponto de entrada.
 
 Uso:
     python main.py              -> microfone JÁ ATIVO + teclado, ao mesmo tempo (padrão)
+    python main.py --gui        -> abre a interface gráfica (ver gui.py)
     python main.py --texto      -> somente teclado, sem usar o microfone
     python main.py --demo       -> roda uma lista de comandos de exemplo (inclui erros propositais)
     python main.py --diagnostico -> mostra o que esta máquina tem disponível para voz
@@ -246,9 +247,26 @@ def rodar_interativo(usar_voz: bool = True) -> None:
     rodar_modo_texto(casa)
 
 
+def abrir_interface_grafica() -> None:
+    """Abre a janela do gui.py. O import fica aqui dentro para o modo
+    terminal continuar funcionando em instalações sem tkinter."""
+    try:
+        from gui import main as abrir_janela
+    except ImportError as erro:
+        print(
+            "Não foi possível abrir a interface gráfica: tkinter não está "
+            f"disponível nesta instalação do Python ({erro}).\n"
+            "Use o modo terminal: python main.py"
+        )
+        return
+    abrir_janela()
+
+
 if __name__ == "__main__":
     if "--diagnostico" in sys.argv:
         print(diagnosticar())
+    elif "--gui" in sys.argv:
+        abrir_interface_grafica()
     elif "--demo" in sys.argv:
         rodar_demo()
     elif "--texto" in sys.argv:
