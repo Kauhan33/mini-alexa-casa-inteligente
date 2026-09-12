@@ -50,12 +50,17 @@ Alexa: Desculpe, não é possível 'abrir' a luz.
 ## Voz (palavra-chave + resposta em áudio)
 
 - **Reconhecimento:** requer microfone e internet (transcrição via Google Web Speech
-  API, pt-BR, sem chave necessária para uso limitado).
-- **Resposta em áudio:** usa a síntese de voz do próprio sistema operacional (SAPI5 no
-  Windows), então funciona offline, sempre tentando uma voz **pt-BR** primeiro. Se o
-  Windows não tiver nenhum pacote de voz em português instalado, o programa avisa na
-  tela e cai para a voz padrão — para instalar uma voz pt-BR: Configurações → Hora e
-  Idioma → Voz → Adicionar vozes.
+  API, pt-BR, sem chave necessária para uso limitado). A escuta contínua calibra o
+  ruído ambiente **uma única vez**, ao entrar no modo de voz — não a cada comando —
+  para não cortar o começo da fala (e da palavra-chave) a cada novo turno.
+- **Resposta em áudio, sempre em pt-BR:** tenta primeiro uma voz local do sistema
+  operacional (pyttsx3/SAPI5 no Windows — offline, mais rápido), mas só usa essa via se
+  encontrar uma voz **pt-BR/português** instalada. Se não encontrar nenhuma (caso comum
+  em Windows sem pacote de idioma), cai automaticamente para o **Google Text-to-Speech**
+  (gTTS, requer internet) — assim a resposta sai em português mesmo sem nada configurado
+  no sistema. Para instalar uma voz pt-BR local no Windows (deixa mais rápido, sem
+  depender de internet para falar): Configurações → Hora e Idioma → Voz → Adicionar
+  vozes.
 
 Instale as dependências extras primeiro:
 
@@ -75,11 +80,12 @@ Você: voz                 # ...mas digite "voz" (ou "ouvir"/"falar") para ativa
 ```
 
 No **modo de voz contínuo**, a Alexa fica ouvindo o microfone o tempo todo, mas só
-reage a frases que começam com a palavra-chave **"Alexa"** — qualquer outra fala
-captada (conversa de fundo, TV, etc.) é **ignorada em silêncio**, sem nenhuma resposta:
+**responde** a frases que começam com a palavra-chave **"Alexa"** — qualquer outra fala
+captada (conversa de fundo, TV, etc.) não gera nenhuma resposta em texto ou áudio (a
+transcrição aparece marcada como "ignorado", só para facilitar depurar o reconhecimento):
 
 ```
-Você (voz): isso é só uma conversa qualquer no fundo     <- nunca aparece: foi ignorada
+Você (voz): isso é só uma conversa qualquer no fundo  (ignorado: sem a palavra-chave 'Alexa')
 Você (voz): Alexa, ligar a luz da sala
 Alexa: Ok, ligando a luz na sala.                          (falado em áudio também)
 ```

@@ -25,7 +25,7 @@ import unicodedata
 
 from lexer import analisar_lexico
 from semantic import CasaInteligente, interpretar
-from voice import STT_DISPONIVEL, ErroReconhecimento, falar, ouvir_comando
+from voice import STT_DISPONIVEL, ErroReconhecimento, OuvidorContinuo, falar
 
 COMANDOS_DEMO = [
     "Ligar a luz da sala",
@@ -105,7 +105,9 @@ def _thread_teclado(evento_parar: threading.Event, casa: CasaInteligente, trava:
 
 def rodar_modo_voz_continuo(casa: CasaInteligente) -> None:
     """Fica ouvindo o microfone repetidamente. Só reage a frases que
-    começam com a palavra-chave "Alexa" — o resto é ignorado em silêncio.
+    começam com a palavra-chave "Alexa" — para os demais, a Alexa não dá
+    nenhuma resposta (nem em texto, nem em áudio), embora a transcrição
+    apareça na tela como "(ignorado)", útil para depurar o reconhecimento.
     Cada comando válido é processado e respondido em texto + áudio, até
     "sair" ser dito (depois de "Alexa") ou digitado. Ao encerrar, termina
     o programa inteiro."""
@@ -114,13 +116,19 @@ def rodar_modo_voz_continuo(casa: CasaInteligente) -> None:
     print("Diga 'Alexa, sair' ou digite 'sair' a qualquer momento para encerrar.\n")
     falar("Modo de voz ativado. Pode falar comigo dizendo Alexa antes do comando.")
 
+    try:
+        ouvidor = OuvidorContinuo()
+    except ErroReconhecimento as erro:
+        print(f"Alexa: {erro}")
+        sys.exit(1)
+
     evento_parar = threading.Event()
     trava = threading.Lock()  # protege o estado da casa contra voz e teclado ao mesmo tempo
     threading.Thread(target=_thread_teclado, args=(evento_parar, casa, trava), daemon=True).start()
 
     while not evento_parar.is_set():
         try:
-            frase_ouvida = ouvir_comando(timeout=3.0)
+            frase_ouvida = ouvidor.ouvir(timeout=5.0)
         except ErroReconhecimento as erro:
             # silêncio (ninguém falou dentro do timeout) é normal aqui —
             # só tenta ouvir de novo, sem poluir a tela com esse aviso
@@ -130,7 +138,8 @@ def rodar_modo_voz_continuo(casa: CasaInteligente) -> None:
 
         comando = _extrair_comando_apos_palavra_chave(frase_ouvida)
         if comando is None:
-            continue  # sem a palavra-chave no início: ignora por completo, sem responder
+            print(f"Você (voz): {frase_ouvida}  (ignorado: sem a palavra-chave 'Alexa')")
+            continue
 
         print(f"Você (voz): {frase_ouvida}")
 

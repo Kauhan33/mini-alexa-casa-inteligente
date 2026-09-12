@@ -6,10 +6,19 @@ Rodar com:  python -m unittest test_main.py -v
 """
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import main
 from semantic import CasaInteligente
+
+
+def _ouvidor_falso(falas):
+    """Cria um OuvidorContinuo falso cujo .ouvir() devolve, em sequência,
+    cada item de `falas` (sem precisar de microfone real)."""
+    falas_iter = iter(falas)
+    ouvidor = MagicMock()
+    ouvidor.ouvir.side_effect = lambda *a, **k: next(falas_iter)
+    return ouvidor
 
 
 class TestPalavraChave(unittest.TestCase):
@@ -38,13 +47,13 @@ class TestPalavraChave(unittest.TestCase):
 class TestModoVozContinuo(unittest.TestCase):
     def test_ignora_falas_sem_palavra_chave_e_processa_as_que_tem(self):
         casa = CasaInteligente()
-        falas = iter([
+        ouvidor = _ouvidor_falso([
             "isso e so uma conversa qualquer no fundo",  # sem "alexa": deve ser ignorada
             "Alexa, ligar a luz da sala",
             "Alexa, sair",
         ])
 
-        with patch("main.ouvir_comando", side_effect=lambda *a, **k: next(falas)), \
+        with patch("main.OuvidorContinuo", return_value=ouvidor), \
              patch("main.falar", lambda *_: None):
             with self.assertRaises(SystemExit):
                 main.rodar_modo_voz_continuo(casa)
@@ -54,9 +63,9 @@ class TestModoVozContinuo(unittest.TestCase):
 
     def test_alexa_sozinha_nao_encerra_o_programa(self):
         casa = CasaInteligente()
-        falas = iter(["Alexa", "Alexa, sair"])
+        ouvidor = _ouvidor_falso(["Alexa", "Alexa, sair"])
 
-        with patch("main.ouvir_comando", side_effect=lambda *a, **k: next(falas)), \
+        with patch("main.OuvidorContinuo", return_value=ouvidor), \
              patch("main.falar", lambda *_: None):
             with self.assertRaises(SystemExit):
                 main.rodar_modo_voz_continuo(casa)
