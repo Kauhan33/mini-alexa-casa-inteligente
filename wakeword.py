@@ -99,9 +99,16 @@ def extrair_comando(frase: str) -> str | None:
     if not palavras:
         return None
 
-    # Hipótese 1: o nome foi transcrito quebrado em duas palavras.
-    if len(palavras) >= 2 and _e_residuo(palavras[1]):
-        if parece_palavra_chave(palavras[0] + palavras[1]):
+    # Hipótese 1: o nome foi transcrito quebrado em duas palavras. Isso
+    # acontece dos dois jeitos — o pedaço solto pode vir depois do nome
+    # ("Alex eu"), ou antes dele ("a lexa"). Em qualquer caso, só juntamos
+    # as duas quando o pedaço extra não significa nada sozinho, para não
+    # engolir parte do comando ("Alexa tv").
+    if len(palavras) >= 2:
+        primeira_e_curta = len(_normalizar(palavras[0])) <= MAX_TAMANHO_RESIDUO
+        if (_e_residuo(palavras[1]) or primeira_e_curta) and parece_palavra_chave(
+            palavras[0] + palavras[1]
+        ):
             return " ".join(palavras[2:]).strip(" ,.!?;:")
 
     # Hipótese 2: o nome é a primeira palavra.

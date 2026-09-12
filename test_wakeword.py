@@ -35,6 +35,10 @@ class TestVariacoesDaPalavraChave(unittest.TestCase):
         transcrito, não parte do comando."""
         self.assertEqual(extrair_comando("Alex eu sair"), "sair")
 
+    def test_nome_quebrado_com_o_pedaco_solto_na_frente(self):
+        """O reconhecimento também quebra o nome ao contrário: "a lexa"."""
+        self.assertEqual(extrair_comando("a lexa ligar a luz"), "ligar a luz")
+
     def test_outras_variacoes(self):
         for frase in ("Alex ligar a luz", "Alexis ligar a luz", "Lexa ligar a luz"):
             with self.subTest(frase=frase):
