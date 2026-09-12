@@ -34,6 +34,53 @@ análise semântica — ver [enunciado.md](enunciado.md).
 - **Locais (opcional):** sala, quarto, cozinha, banheiro, quintal, garagem,
   escritório, varanda
 - **Valores:** números, usados para definir o nível de ventilador/ar-condicionado/tv
+- **Consultas:** `estado`/`status`/`situacao` da casa, `comandos`/`ajuda`/`help`
+
+Dentro do programa, o comando **`comandos`** imprime a lista completa do que é aceito —
+e ela é montada a partir do próprio vocabulário do `lexer.py` e da tabela de
+compatibilidade do `semantic.py`, então nunca fica desatualizada em relação ao código:
+
+```
+Você: comandos
+Alexa: Comandos disponíveis:
+
+  ligar/acender/ativar/iniciar  ou  desligar/apagar/desativar/parar
+    dispositivos: alarme, ar-condicionado, luz, tomada, tv, ventilador
+
+  abrir  ou  fechar
+    dispositivos: cortina, porta, portão
+
+  aumentar/subir  ou  diminuir/baixar/reduzir
+    dispositivos: ar-condicionado, tv, ventilador
+    aceita um nível de 0 a 100 (ex.: 'para 60')
+
+  locais (opcionais): banheiro, cozinha, escritório, garagem, quarto, quintal, sala, varanda
+
+  consultas:
+    estado/situacao/status da casa  -> o que está ligado agora
+    ajuda/comandos/help  -> esta lista
+    sair  -> encerra o programa
+```
+
+Por voz, a lista sai completa na tela e a assistente fala apenas um resumo — ler tudo em
+voz alta seria interminável.
+
+### Consultar o que está ligado
+
+```
+Você: estado da casa
+Alexa: Nenhum dispositivo está ligado ou aberto no momento.
+Você: ligar a luz do quarto
+Alexa: Ok, ligando a luz do quarto.
+Você: aumentar o ventilador da sala para 60
+Alexa: Ok, aumentando o ventilador da sala para 60.
+Você: estado da casa
+Alexa: No momento, a luz do quarto está acesa; o ventilador da sala está ligado, em 60.
+       O restante está desligado.
+```
+
+Só aparece o que está ativo, com o particípio certo de cada dispositivo (*acesa*,
+*aberta*, *ativado*) e o nível quando houver. Consultar não altera nada.
 
 ## Como executar
 
@@ -180,16 +227,17 @@ para digitar um comando ou "sair".
 python -m unittest discover -p "test_*.py" -v
 ```
 
-São 65 testes, cobrindo a análise léxica, a análise semântica (incluindo as ações
-redundantes e a independência entre locais), a detecção da palavra-chave com transcrições
-reais, o aviso de "ouvindo", a portabilidade sem nenhuma biblioteca de voz instalada e
-dois testes de regressão de bugs encontrados em uso real: o motor de voz que falava só na
-primeira resposta e o `EOFError` de stdin não interativo que encerrava o modo de voz na
-largada.
+São 82 testes, cobrindo a análise léxica, a análise semântica (incluindo as ações
+redundantes e a independência entre locais), os comandos de consulta, a detecção da
+palavra-chave com transcrições reais, o aviso de "ouvindo", a portabilidade sem nenhuma
+biblioteca de voz instalada e dois testes de regressão de bugs encontrados em uso real: o
+motor de voz que falava só na primeira resposta e o `EOFError` de stdin não interativo que
+encerrava o modo de voz na largada.
 
 | Arquivo | Cobre |
 |---|---|
 | `test_mini_alexa.py` | lexer, semântica e estado (ações redundantes) |
+| `test_consultas.py` | "estado da casa" e a lista de comandos |
 | `test_wakeword.py` | palavra-chave e suas variações mal transcritas |
 | `test_voice.py` | ordem dos motores de síntese e regressão do motor reutilizado |
 | `test_main.py` | fluxo de interação, áudio só na voz, teclado em paralelo |

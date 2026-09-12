@@ -45,6 +45,9 @@ ACOES: dict[str, str] = {
     "fechar": "FECHAR",
     "aumentar": "AUMENTAR", "subir": "AUMENTAR",
     "diminuir": "DIMINUIR", "baixar": "DIMINUIR", "reduzir": "DIMINUIR",
+    # consultas: ações que não controlam um dispositivo específico
+    "estado": "ESTADO", "status": "ESTADO", "situacao": "ESTADO",
+    "ajuda": "AJUDA", "comandos": "AJUDA", "help": "AJUDA",
 }
 
 # cada dispositivo pode ter vários sinônimos, inclusive compostos por mais de uma palavra
@@ -69,6 +72,9 @@ LOCAIS = {
 PALAVRAS_IGNORADAS = {
     "a", "o", "as", "os", "de", "da", "do", "das", "dos", "para", "pra", "por",
     "favor", "no", "na", "nos", "nas", "grau", "graus", "porcento",
+    # acompanham as consultas ("estado da casa", "lista de comandos",
+    # "quais comandos") sem acrescentar significado próprio
+    "casa", "lista", "listar", "quais", "qual", "disponiveis", "possiveis", "me", "diga",
 }
 
 

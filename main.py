@@ -31,7 +31,7 @@ import sys
 import threading
 
 from lexer import analisar_lexico
-from semantic import CasaInteligente, interpretar
+from semantic import CasaInteligente, interpretar, texto_para_audio
 from voice import STT_DISPONIVEL, ErroReconhecimento, OuvidorContinuo, diagnosticar, falar
 from wakeword import extrair_comando
 
@@ -47,6 +47,7 @@ COMANDOS_DEMO = [
     "Abrir a porta da garagem",                # redundante
     "Abrir a luz da sala",                     # incompatível -> erro semântico
     "Ligar o forno",                           # dispositivo desconhecido
+    "Estado da casa",                          # consulta: o que está ligado agora
 ]
 
 COMANDOS_SAIR = ("sair", "exit", "quit")
@@ -63,6 +64,11 @@ AVISO_ESTADO_INICIAL = (
     "fechadas), em todos os locais."
 )
 
+AVISO_CONSULTAS = (
+    'Consultas: diga/digite "comandos" para ver tudo que e aceito, ou '
+    '"estado da casa" para saber o que esta ligado agora.'
+)
+
 
 def processar(frase: str, casa: CasaInteligente, verboso: bool = True) -> str:
     tokens = analisar_lexico(frase)
@@ -76,10 +82,11 @@ def _responder(resposta: str, com_audio: bool) -> None:
 
     O áudio é reservado às respostas de comandos **falados**: quem digitou o
     comando está olhando a tela, e ouvir a resposta em voz alta seria
-    intrusivo."""
+    intrusivo. Respostas longas (a lista de comandos) são faladas em versão
+    resumida, mas impressas por completo."""
     print(f"Alexa: {resposta}")
     if com_audio:
-        falar(resposta)
+        falar(texto_para_audio(resposta))
 
 
 def _avisar_ouvindo() -> None:
@@ -133,6 +140,7 @@ def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
     print('Microfone ativo: fale começando com "Alexa" (ex.: "Alexa, ligar a luz da sala")')
     print("ou apenas digite o comando, sem palavra-chave (ex.: ligar a luz da sala).")
     print('Para encerrar: diga "Alexa, sair" ou digite "sair".')
+    print(AVISO_CONSULTAS)
     print(AVISO_ESTADO_INICIAL + "\n")
     falar("Estou ouvindo. Diga Alexa antes do comando.")
 
@@ -197,6 +205,7 @@ def rodar_modo_texto(casa: CasaInteligente) -> None:
     """Modo somente teclado (sem microfone). Não exige palavra-chave e não
     responde em áudio."""
     print("Mini-Alexa de Casa Inteligente (digite 'sair' para encerrar)")
+    print(AVISO_CONSULTAS)
     print(AVISO_ESTADO_INICIAL + "\n")
 
     while True:
