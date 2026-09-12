@@ -4,6 +4,7 @@ fala mockados, sem depender de hardware real) e o modo texto.
 Rodar com:  python -m unittest test_main.py -v
 """
 
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -56,6 +57,72 @@ class TestModoVoz(unittest.TestCase):
         with patch("main.falar", lambda *_: None):
             with self.assertRaises(SystemExit):
                 main.rodar_modo_voz(casa, ouvidor)
+
+
+class TestAudioSomenteParaVoz(unittest.TestCase):
+    """Áudio é só para comandos falados: quem digitou está olhando a tela."""
+
+    def test_comando_falado_responde_em_audio(self):
+        casa = CasaInteligente()
+        ouvidor = _ouvidor_falso(["Alexa ligar a luz da sala", "Alexa sair"])
+        falas = []
+
+        with patch("main.falar", falas.append):
+            with self.assertRaises(SystemExit):
+                main.rodar_modo_voz(casa, ouvidor)
+
+        self.assertIn("Ok, ligando a luz da sala.", falas)
+
+    def test_comando_digitado_nao_responde_em_audio(self):
+        casa = CasaInteligente()
+        entradas = iter(["ligar a luz da sala", "sair"])
+        falas = []
+
+        with patch("builtins.input", lambda *_: next(entradas)), \
+             patch("main.falar", falas.append):
+            main._thread_teclado(threading.Event(), casa, threading.Lock())
+
+        self.assertEqual(falas, [])
+        self.assertTrue(casa.obter("luz", "sala").ligado)
+
+    def test_modo_texto_nunca_fala(self):
+        casa = CasaInteligente()
+        entradas = iter(["ligar a luz da sala", "sair"])
+        falas = []
+
+        with patch("builtins.input", lambda *_: next(entradas)), \
+             patch("main.falar", falas.append):
+            main.rodar_modo_texto(casa)
+
+        self.assertEqual(falas, [])
+
+
+class TestTecladoSemStdin(unittest.TestCase):
+    """Regressão: stdin não interativo (entrada redirecionada) fazia o
+    input() estourar EOFError na hora, e isso encerrava o modo de voz —
+    deve apenas parar a leitura de teclado, mantendo a escuta ativa."""
+
+    def test_eof_no_teclado_nao_encerra_o_modo_voz(self):
+        parar = threading.Event()
+
+        def input_com_eof(*_a):
+            raise EOFError
+
+        with patch("builtins.input", input_com_eof):
+            main._thread_teclado(parar, CasaInteligente(), threading.Lock())
+
+        self.assertFalse(parar.is_set(), "EOF no teclado não deve pedir para sair")
+
+    def test_ctrl_c_no_teclado_encerra(self):
+        parar = threading.Event()
+
+        def input_com_interrupcao(*_a):
+            raise KeyboardInterrupt
+
+        with patch("builtins.input", input_com_interrupcao):
+            main._thread_teclado(parar, CasaInteligente(), threading.Lock())
+
+        self.assertTrue(parar.is_set())
 
 
 class TestModoTexto(unittest.TestCase):

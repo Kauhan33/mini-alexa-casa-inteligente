@@ -134,32 +134,58 @@ def _transcrever(reconhecedor, audio, idioma: str) -> str:
 # Síntese de voz (texto -> áudio)
 # --------------------------------------------------------------------------
 
-_motor_tts_local = None  # instância única do motor pyttsx3 (lazy init)
-_motor_tem_voz_pt = False
 _aviso_sem_voz_pt_mostrado = False
+_aviso_falha_audio_mostrado = False
 
 
-def _obter_motor_tts_local():
-    """Inicializa (uma única vez) o motor de voz local e tenta selecionar
-    uma voz em português. Devolve o motor e se uma voz pt foi encontrada."""
-    global _motor_tts_local, _motor_tem_voz_pt, _aviso_sem_voz_pt_mostrado
-    if _motor_tts_local is None:
-        _motor_tts_local = pyttsx3.init()
-        _motor_tem_voz_pt = _selecionar_voz_em_portugues(_motor_tts_local)
-        if not _motor_tem_voz_pt and not _aviso_sem_voz_pt_mostrado:
-            if TTS_ONLINE_DISPONIVEL:
-                print(
-                    "(nenhuma voz em português encontrada neste computador; "
-                    "usando o Google Text-to-Speech (online) para responder em pt-BR.)"
-                )
-            else:
-                print(
-                    "(nenhuma voz em português encontrada neste computador; usando a voz "
-                    "padrão do sistema, em outro idioma. Para instalar uma voz pt-BR no "
-                    "Windows: Configurações -> Hora e Idioma -> Voz -> Adicionar vozes.)"
-                )
-            _aviso_sem_voz_pt_mostrado = True
-    return _motor_tts_local, _motor_tem_voz_pt
+def existe_voz_local_em_portugues() -> bool:
+    """Diz se o sistema tem alguma voz em português instalada. Cada consulta
+    cria um motor descartável — inicializar pyttsx3 é rápido, e guardar a
+    instância entre chamadas é justamente o que quebra a síntese (ver
+    _falar_local)."""
+    if not TTS_LOCAL_DISPONIVEL:
+        return False
+    try:
+        motor = pyttsx3.init()
+    except Exception:
+        return False
+    try:
+        return _selecionar_voz_em_portugues(motor)
+    finally:
+        try:
+            motor.stop()
+        except Exception:
+            pass
+
+
+def _avisar_sem_voz_pt() -> None:
+    """Explica, uma única vez, como a resposta em português será produzida."""
+    global _aviso_sem_voz_pt_mostrado
+    if _aviso_sem_voz_pt_mostrado:
+        return
+    _aviso_sem_voz_pt_mostrado = True
+    if TTS_ONLINE_DISPONIVEL:
+        print(
+            "(nenhuma voz em português instalada neste computador; "
+            "usando o Google Text-to-Speech (online) para responder em pt-BR.)"
+        )
+    else:
+        print(
+            "(nenhuma voz em português instalada e gTTS indisponível; a resposta em "
+            "áudio sairá na voz padrão do sistema, em outro idioma. Para instalar uma "
+            "voz pt-BR no Windows: Configurações -> Hora e Idioma -> Voz -> Adicionar vozes.)"
+        )
+
+
+def _avisar_falha_audio(origem: str, erro: BaseException) -> None:
+    """Mostra, uma única vez, por que o áudio não saiu — sem engolir o erro
+    em silêncio (o que já dificultou um diagnóstico antes) nem repetir o
+    aviso a cada resposta."""
+    global _aviso_falha_audio_mostrado
+    if _aviso_falha_audio_mostrado:
+        return
+    _aviso_falha_audio_mostrado = True
+    print(f"(aviso: não consegui falar a resposta em áudio via {origem}: {erro})")
 
 
 def _selecionar_voz_em_portugues(motor) -> bool:
@@ -185,13 +211,33 @@ def _selecionar_voz_em_portugues(motor) -> bool:
     return False
 
 
-def _falar_local(texto: str) -> None:
-    motor, _ = _obter_motor_tts_local()
-    motor.say(texto)
-    motor.runAndWait()
+def _falar_local(texto: str, exigir_portugues: bool = True) -> bool:
+    """
+    Fala usando o motor do sistema operacional. Devolve True se falou.
+
+    IMPORTANTE: cria um motor pyttsx3 **novo a cada fala**. Reaproveitar a
+    mesma instância parece natural, mas depois do primeiro runAndWait() o
+    loop interno do pyttsx3 é encerrado e as chamadas seguintes retornam na
+    hora, sem produzir som nenhum — foi exatamente esse o bug em que só a
+    primeira resposta era falada e as demais saíam apenas por escrito.
+    """
+    motor = pyttsx3.init()
+    try:
+        tem_voz_pt = _selecionar_voz_em_portugues(motor)
+        if exigir_portugues and not tem_voz_pt:
+            return False
+        motor.say(texto)
+        motor.runAndWait()
+        return True
+    finally:
+        try:
+            motor.stop()
+        except Exception:
+            pass
 
 
 def _falar_online_pt_br(texto: str) -> None:
+    """Sintetiza com o Google Text-to-Speech (sempre pt-BR) e toca o mp3."""
     caminho = os.path.join(tempfile.gettempdir(), f"mini_alexa_{uuid.uuid4().hex}.mp3")
     try:
         gTTS(text=texto, lang="pt", tld="com.br").save(caminho)
@@ -205,36 +251,93 @@ def _falar_online_pt_br(texto: str) -> None:
 
 def falar(texto: str) -> None:
     """
-    Lê o texto em voz alta, em português. Prioridades:
-    1. pyttsx3 com uma voz pt-BR/pt instalada no sistema (offline, rápido);
-    2. gTTS + playsound (online, mas sempre em pt-BR, mesmo sem nenhuma voz
-       instalada no sistema);
-    3. nada — se nenhuma das duas estiver disponível ou ambas falharem, a
-       função simplesmente não faz nada. A resposta em áudio é um bônus
-       best-effort: a resposta já foi impressa na tela de qualquer forma,
-       então um problema de áudio nunca derruba o programa.
+    Lê o texto em voz alta, em português, tentando em ordem:
+
+    1. voz pt-BR/português instalada no sistema (pyttsx3 — offline, rápido);
+    2. gTTS + playsound (online, sempre pt-BR, funciona mesmo em máquina
+       sem nenhuma voz instalada);
+    3. voz padrão do sistema, em qualquer idioma (melhor que silêncio);
+    4. nada.
+
+    Falar é sempre best-effort: a resposta já foi impressa na tela, então
+    nenhum problema de áudio (falta de biblioteca, de voz, de internet ou de
+    placa de som) interrompe o programa. Se todas as tentativas falharem, o
+    motivo é mostrado uma única vez, em vez de falhar em silêncio.
     """
     if not texto:
         return
 
+    ultimo_erro: BaseException | None = None
+    origem_erro = "síntese de voz"
+
+    # 1) voz local em português
     if TTS_LOCAL_DISPONIVEL:
         try:
-            _, tem_voz_pt = _obter_motor_tts_local()
-            if tem_voz_pt:
-                _falar_local(texto)
+            if _falar_local(texto, exigir_portugues=True):
                 return
-        except Exception:
-            pass
+            _avisar_sem_voz_pt()
+        except Exception as exc:
+            ultimo_erro, origem_erro = exc, "voz do sistema (pyttsx3)"
 
+    # 2) gTTS (garante pt-BR em qualquer máquina, desde que haja internet)
     if TTS_ONLINE_DISPONIVEL:
         try:
             _falar_online_pt_br(texto)
             return
-        except Exception:
-            pass
+        except Exception as exc:
+            ultimo_erro, origem_erro = exc, "Google Text-to-Speech (gTTS)"
 
+    # 3) qualquer voz local, mesmo em outro idioma — melhor que silêncio
     if TTS_LOCAL_DISPONIVEL:
         try:
-            _falar_local(texto)
-        except Exception:
-            pass
+            if _falar_local(texto, exigir_portugues=False):
+                return
+        except Exception as exc:
+            ultimo_erro, origem_erro = exc, "voz do sistema (pyttsx3)"
+
+    if ultimo_erro is not None:
+        _avisar_falha_audio(origem_erro, ultimo_erro)
+
+
+def diagnosticar() -> str:
+    """Relatório do que está disponível nesta máquina para voz — útil para
+    checar o ambiente antes de testar (e para entender, sem adivinhação,
+    por que a voz pode não estar funcionando em um computador específico)."""
+    linhas = ["Diagnóstico de voz do Mini-Alexa", "-" * 34]
+
+    linhas.append(
+        f"Reconhecimento de fala (SpeechRecognition): {'OK' if STT_DISPONIVEL else 'NÃO INSTALADO'}"
+    )
+
+    if STT_DISPONIVEL:
+        try:
+            microfones = sr.Microphone.list_microphone_names()
+            linhas.append(f"Microfones detectados: {len(microfones)}")
+        except Exception as exc:
+            linhas.append(f"Microfones detectados: falha ao listar ({exc})")
+
+    linhas.append(
+        f"Voz do sistema (pyttsx3): {'OK' if TTS_LOCAL_DISPONIVEL else 'NÃO INSTALADO'}"
+    )
+    if TTS_LOCAL_DISPONIVEL:
+        linhas.append(
+            f"  voz em português instalada: {'SIM' if existe_voz_local_em_portugues() else 'NÃO'}"
+        )
+    linhas.append(
+        f"Voz online em pt-BR (gTTS + playsound): {'OK' if TTS_ONLINE_DISPONIVEL else 'NÃO INSTALADO'}"
+    )
+
+    linhas.append("")
+    if STT_DISPONIVEL:
+        linhas.append("Comandos por voz: disponíveis.")
+    else:
+        linhas.append(
+            "Comandos por voz: indisponíveis — o programa roda só com o teclado "
+            "(python main.py --texto)."
+        )
+    if TTS_LOCAL_DISPONIVEL or TTS_ONLINE_DISPONIVEL:
+        linhas.append("Respostas em áudio: disponíveis.")
+    else:
+        linhas.append("Respostas em áudio: indisponíveis — as respostas sairão só por escrito.")
+
+    return "\n".join(linhas)

@@ -45,29 +45,70 @@ python main.py            # microfone JÁ ATIVO + teclado, ao mesmo tempo (padr�
 ```
 
 ```bash
-python main.py --texto    # somente teclado, sem usar o microfone
-python main.py --demo     # roda comandos de exemplo, incluindo erros propositais
+python main.py --texto       # somente teclado, sem usar o microfone
+python main.py --demo        # roda comandos de exemplo, incluindo erros propositais
+python main.py --diagnostico # mostra o que esta máquina tem disponível para voz
 ```
 
 Não é preciso ativar nada: ao iniciar, o programa já está ouvindo **e** aceitando texto
-digitado. A única diferença entre os dois:
+digitado. A diferença entre os dois:
 
-| Entrada | Palavra-chave | Exemplo |
-|---|---|---|
-| **Falando** | obrigatória | `Alexa, ligar a luz da sala` |
-| **Digitando** | não precisa | `ligar a luz da sala` |
+| Entrada | Palavra-chave | Resposta em áudio | Exemplo |
+|---|---|---|---|
+| **Falando** | obrigatória | sim | `Alexa, ligar a luz da sala` |
+| **Digitando** | não precisa | não (só na tela) | `ligar a luz da sala` |
 
 Exemplo de sessão (voz e teclado misturados):
 
 ```
 Você (voz): Alexa ligar a luz da sala
-Alexa: Ok, ligando a luz na sala.
+Alexa: Ok, ligando a luz da sala.          (falado em áudio)
 Você (voz): agora tá funcionando      (ignorado: sem a palavra-chave 'Alexa')
 abrir a luz da sala                   <- digitado, sem palavra-chave
-Alexa: Desculpe, não é possível 'abrir' a luz.
+Alexa: Desculpe, não é possível 'abrir' a luz.   (só na tela, sem áudio)
 Você (voz): Alexa sair
 Alexa: Até logo!
 ```
+
+## Estado da casa: ações redundantes
+
+A assistente guarda o estado de cada dispositivo **por local**, e mandar fazer algo que
+já está feito não é tratado como execução — ela informa o estado atual. É a parte da
+análise semântica que depende de contexto, não só das palavras da frase:
+
+```
+Você: ligar a luz do quarto
+Alexa: Ok, ligando a luz do quarto.
+Você: ligar a luz do quarto
+Alexa: A luz do quarto já está acesa.      <- não "executa" de novo
+Você: desligar a luz do quarto
+Alexa: Ok, desligando a luz do quarto.
+Você: desligar a luz do quarto
+Alexa: A luz do quarto já está apagada.
+```
+
+Os particípios acompanham o dispositivo e o gênero: a luz fica *acesa/apagada*, a porta
+*aberta/fechada*, o ventilador *ligado/desligado*, o alarme *ativado/desativado*. O mesmo
+vale para os níveis — "já está no máximo", "já está no mínimo", "já está em 80".
+
+## Funciona em qualquer computador?
+
+Sim. O núcleo do exercício (análise léxica + análise semântica) usa **apenas a biblioteca
+padrão do Python** — um teste automatizado verifica que `lexer.py` e `semantic.py` não
+importam nenhuma biblioteca de voz. Tudo relacionado a áudio é opcional e degrada sozinho:
+
+| Ambiente | O que acontece |
+|---|---|
+| Tudo instalado, com microfone e internet | voz + teclado, respostas faladas em pt-BR |
+| Sem voz pt-BR instalada no sistema | usa o Google TTS (online) para falar em pt-BR |
+| Sem internet | usa a voz do sistema; se não houver em português, fala na voz padrão |
+| Sem microfone | avisa e continua só pelo teclado |
+| Sem as bibliotecas de voz (`pip install` não rodado) | avisa e continua só pelo teclado |
+| Sem placa de som / áudio falha | mostra o motivo uma vez e segue respondendo por escrito |
+
+Em nenhum desses casos o programa quebra ou encerra. Para conferir o ambiente antes de
+testar, rode `python main.py --diagnostico`, que lista o que está disponível; e
+`python main.py --texto` roda sem tocar no microfone.
 
 ## Voz (palavra-chave + resposta em áudio)
 
@@ -83,6 +124,11 @@ Alexa: Até logo!
   no sistema. Para instalar uma voz pt-BR local no Windows (deixa mais rápido, sem
   depender de internet para falar): Configurações → Hora e Idioma → Voz → Adicionar
   vozes.
+- **Um motor de voz novo por fala:** reaproveitar a instância do pyttsx3 parece natural,
+  mas depois do primeiro `runAndWait()` o loop interno do motor é encerrado e as falas
+  seguintes retornam sem produzir som — só a primeira resposta era falada. `voice.py`
+  cria um motor por fala justamente para evitar isso (ver o teste de regressão em
+  `test_voice.py`).
 
 ### Palavra-chave tolerante a erros de transcrição
 
@@ -105,12 +151,22 @@ Digitar, por outro lado, **nunca** precisa da palavra-chave, e funciona em paral
 escuta (thread separada) — então não é preciso esperar o ciclo de escuta atual terminar
 para digitar um comando ou "sair".
 
-Se a biblioteca de reconhecimento não estiver instalada, ou não houver microfone
-disponível, o programa avisa e continua funcionando normalmente só com o teclado — a voz
-é opcional em todos os sentidos: sem ela, o resto do programa funciona igual.
-
 ## Testes
 
 ```bash
 python -m unittest discover -p "test_*.py" -v
 ```
+
+São 57 testes, cobrindo a análise léxica, a análise semântica (incluindo as ações
+redundantes), a detecção da palavra-chave com transcrições reais, a portabilidade sem
+nenhuma biblioteca de voz instalada e dois testes de regressão de bugs encontrados em uso
+real: o motor de voz que falava só na primeira resposta e o `EOFError` de stdin não
+interativo que encerrava o modo de voz na largada.
+
+| Arquivo | Cobre |
+|---|---|
+| `test_mini_alexa.py` | lexer, semântica e estado (ações redundantes) |
+| `test_wakeword.py` | palavra-chave e suas variações mal transcritas |
+| `test_voice.py` | ordem dos motores de síntese e regressão do motor reutilizado |
+| `test_main.py` | fluxo de interação, áudio só na voz, teclado em paralelo |
+| `test_sem_dependencias.py` | portabilidade: rodar sem microfone/bibliotecas/internet |

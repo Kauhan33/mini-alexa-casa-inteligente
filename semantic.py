@@ -1,9 +1,18 @@
 """
 Analisador semântico + executor de comandos do Mini-Alexa de Casa Inteligente.
 
-Recebe a lista de tokens produzida pela fase léxica (lexer.py), valida se o
-comando faz sentido (ex.: não dá para "abrir" uma "luz") e, se for válido,
-atualiza o estado simulado da casa e devolve a resposta que a "Alexa" daria.
+Recebe a lista de tokens produzida pela fase léxica (lexer.py) e faz três
+verificações de significado antes de agir:
+
+1. a frase tem os elementos necessários (uma ação e um dispositivo)?
+2. a ação faz sentido para aquele dispositivo (não se "abre" uma luz)?
+3. a ação muda algo, dado o **estado atual** da casa? Mandar ligar uma luz
+   que já está acesa é uma frase perfeitamente válida, mas redundante — e a
+   assistente responde informando o estado ("A luz do quarto já está
+   acesa.") em vez de fingir que executou.
+
+A verificação 3 é o que diferencia análise semântica de simples validação
+de sintaxe: o significado do comando depende do contexto, não só das palavras.
 """
 
 from __future__ import annotations
@@ -22,23 +31,63 @@ COMPATIBILIDADE: dict[str, set[str]] = {
     "DIMINUIR": {"ventilador", "ar_condicionado", "tv"},
 }
 
-NOME_LEGIVEL = {
-    "luz": "a luz", "ventilador": "o ventilador", "ar_condicionado": "o ar-condicionado",
-    "tv": "a tv", "porta": "a porta", "portao": "o portão", "cortina": "a cortina",
-    "tomada": "a tomada", "alarme": "o alarme",
+# Cada dispositivo tem artigo (para concordância de gênero) e os particípios
+# que descrevem seus dois estados — uma luz fica "acesa/apagada", uma porta
+# "aberta/fechada", um alarme "ativado/desativado".
+DISPOSITIVOS: dict[str, dict[str, str]] = {
+    "luz":             {"artigo": "a", "nome": "luz",             "ativo": "acesa",   "inativo": "apagada"},
+    "ventilador":      {"artigo": "o", "nome": "ventilador",      "ativo": "ligado",  "inativo": "desligado"},
+    "ar_condicionado": {"artigo": "o", "nome": "ar-condicionado", "ativo": "ligado",  "inativo": "desligado"},
+    "tv":              {"artigo": "a", "nome": "tv",              "ativo": "ligada",  "inativo": "desligada"},
+    "porta":           {"artigo": "a", "nome": "porta",           "ativo": "aberta",  "inativo": "fechada"},
+    "portao":          {"artigo": "o", "nome": "portão",          "ativo": "aberto",  "inativo": "fechado"},
+    "cortina":         {"artigo": "a", "nome": "cortina",         "ativo": "aberta",  "inativo": "fechada"},
+    "tomada":          {"artigo": "a", "nome": "tomada",          "ativo": "ligada",  "inativo": "desligada"},
+    "alarme":          {"artigo": "o", "nome": "alarme",          "ativo": "ativado", "inativo": "desativado"},
 }
 
-LOCAL_PREPOSICAO = {
-    "sala": "na sala", "quarto": "no quarto", "cozinha": "na cozinha",
-    "banheiro": "no banheiro", "quintal": "no quintal", "garagem": "na garagem",
-    "escritorio": "no escritório", "varanda": "na varanda",
+LOCAL_GENITIVO = {
+    "sala": "da sala", "quarto": "do quarto", "cozinha": "da cozinha",
+    "banheiro": "do banheiro", "quintal": "do quintal", "garagem": "da garagem",
+    "escritorio": "do escritório", "varanda": "da varanda",
 }
+
+GERUNDIO = {
+    "LIGAR": "ligando", "DESLIGAR": "desligando",
+    "ABRIR": "abrindo", "FECHAR": "fechando",
+    "AUMENTAR": "aumentando", "DIMINUIR": "diminuindo",
+}
+
+ACOES_QUE_ATIVAM = ("LIGAR", "ABRIR")
+ACOES_QUE_DESATIVAM = ("DESLIGAR", "FECHAR")
+ACOES_DE_NIVEL = ("AUMENTAR", "DIMINUIR")
+
+NIVEL_MINIMO = 0
+NIVEL_MAXIMO = 100
+PASSO_PADRAO = 10
 
 
 @dataclass
 class Dispositivo:
     ligado: bool = False
     nivel: int = 0  # velocidade / temperatura / volume, quando aplicável
+
+
+def descrever(dispositivo: str, local: str | None = None) -> str:
+    """Ex.: ("luz", "quarto") -> "a luz do quarto"."""
+    info = DISPOSITIVOS.get(dispositivo)
+    if info is None:
+        return dispositivo
+    texto = f"{info['artigo']} {info['nome']}"
+    if local in LOCAL_GENITIVO:
+        texto += f" {LOCAL_GENITIVO[local]}"
+    return texto
+
+
+def _maiuscula(texto: str) -> str:
+    """Primeira letra maiúscula, sem mexer no resto (str.capitalize()
+    rebaixaria o resto da frase)."""
+    return texto[:1].upper() + texto[1:]
 
 
 class CasaInteligente:
@@ -57,30 +106,52 @@ class CasaInteligente:
         return self._estado[chave]
 
     def executar(self, acao: str, dispositivo: str, local: str | None, valor: int | None) -> str:
+        """Aplica a ação ao estado da casa e devolve a resposta da assistente.
+        Quando a ação não mudaria nada, informa o estado atual em vez de
+        executar."""
         estado = self.obter(dispositivo, local)
-        nome = NOME_LEGIVEL.get(dispositivo, dispositivo)
-        onde = f" {LOCAL_PREPOSICAO[local]}" if local in LOCAL_PREPOSICAO else ""
+        info = DISPOSITIVOS[dispositivo]
+        alvo = descrever(dispositivo, local)
 
-        if acao == "LIGAR":
+        if acao in ACOES_QUE_ATIVAM:
+            if estado.ligado:
+                return f"{_maiuscula(alvo)} já está {info['ativo']}."
             estado.ligado = True
-            return f"Ok, ligando {nome}{onde}."
-        if acao == "DESLIGAR":
+            return f"Ok, {GERUNDIO[acao]} {alvo}."
+
+        if acao in ACOES_QUE_DESATIVAM:
+            if not estado.ligado:
+                return f"{_maiuscula(alvo)} já está {info['inativo']}."
             estado.ligado = False
-            return f"Ok, desligando {nome}{onde}."
-        if acao == "ABRIR":
-            estado.ligado = True
-            return f"Ok, abrindo {nome}{onde}."
-        if acao == "FECHAR":
-            estado.ligado = False
-            return f"Ok, fechando {nome}{onde}."
-        if acao in ("AUMENTAR", "DIMINUIR"):
-            passo = valor if valor is not None else 10
-            delta = passo if acao == "AUMENTAR" else -passo
-            estado.nivel = max(0, min(100, estado.nivel + delta))
-            estado.ligado = estado.nivel > 0 or estado.ligado
-            verbo = "aumentando" if acao == "AUMENTAR" else "diminuindo"
-            return f"Ok, {verbo} {nome}{onde} para {estado.nivel}."
-        return f"Não sei como executar '{acao}' em {nome}."
+            return f"Ok, {GERUNDIO[acao]} {alvo}."
+
+        if acao in ACOES_DE_NIVEL:
+            return self._ajustar_nivel(acao, estado, alvo, valor)
+
+        return f"Não sei como executar '{acao}' em {alvo}."
+
+    def _ajustar_nivel(self, acao: str, estado: Dispositivo, alvo: str, valor: int | None) -> str:
+        if acao == "AUMENTAR" and estado.nivel >= NIVEL_MAXIMO:
+            return f"{_maiuscula(alvo)} já está no máximo."
+        if acao == "DIMINUIR" and estado.nivel <= NIVEL_MINIMO:
+            return f"{_maiuscula(alvo)} já está no mínimo."
+
+        if valor is not None:
+            # com valor explícito ("para 60"), o número é o nível desejado —
+            # mas pedir para *aumentar* até um nível igual ou menor que o
+            # atual é contraditório, então a assistente só informa o estado
+            desejado = max(NIVEL_MINIMO, min(NIVEL_MAXIMO, valor))
+            if acao == "AUMENTAR" and desejado <= estado.nivel:
+                return f"{_maiuscula(alvo)} já está em {estado.nivel}."
+            if acao == "DIMINUIR" and desejado >= estado.nivel:
+                return f"{_maiuscula(alvo)} já está em {estado.nivel}."
+            estado.nivel = desejado
+        else:
+            delta = PASSO_PADRAO if acao == "AUMENTAR" else -PASSO_PADRAO
+            estado.nivel = max(NIVEL_MINIMO, min(NIVEL_MAXIMO, estado.nivel + delta))
+
+        estado.ligado = estado.nivel > NIVEL_MINIMO
+        return f"Ok, {GERUNDIO[acao]} {alvo} para {estado.nivel}."
 
 
 def interpretar(tokens: list[Token], casa: CasaInteligente) -> str:
@@ -108,8 +179,7 @@ def interpretar(tokens: list[Token], casa: CasaInteligente) -> str:
     valor = int(valores[0].valor) if valores else None
 
     if dispositivo not in COMPATIBILIDADE.get(acao, set()):
-        nome = NOME_LEGIVEL.get(dispositivo, dispositivo)
-        return f"Desculpe, não é possível '{acao.lower()}' {nome}."
+        return f"Desculpe, não é possível '{acao.lower()}' {descrever(dispositivo)}."
 
     resposta = casa.executar(acao, dispositivo, local, valor)
 

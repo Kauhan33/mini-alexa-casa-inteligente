@@ -2,9 +2,10 @@
 Mini-Alexa de Casa Inteligente — ponto de entrada.
 
 Uso:
-    python main.py            -> microfone JÁ ATIVO + teclado, ao mesmo tempo (padrão)
-    python main.py --texto    -> somente teclado, sem usar o microfone
-    python main.py --demo     -> roda uma lista de comandos de exemplo (inclui erros propositais)
+    python main.py              -> microfone JÁ ATIVO + teclado, ao mesmo tempo (padrão)
+    python main.py --texto      -> somente teclado, sem usar o microfone
+    python main.py --demo       -> roda uma lista de comandos de exemplo (inclui erros propositais)
+    python main.py --diagnostico -> mostra o que esta máquina tem disponível para voz
 
 Por padrão o programa começa ouvindo: dá para **falar** ou **digitar** o
 comando, sem precisar ativar nada. A diferença entre os dois:
@@ -13,12 +14,15 @@ comando, sem precisar ativar nada. A diferença entre os dois:
   "Alexa, ligar a luz da sala"). Qualquer outra fala captada não recebe
   resposta — é só conversa perto do microfone. Variações comuns de
   transcrição errada do nome ("Alexia", "Alex", "Alex eu") também são
-  aceitas (ver wakeword.py).
-- **Digitando**, não precisa da palavra-chave: digitar já é um ato
-  deliberado. Basta escrever "ligar a luz da sala".
+  aceitas (ver wakeword.py). A resposta sai na tela **e em áudio** (pt-BR).
+- **Digitando**, não precisa da palavra-chave (digitar já é um ato
+  deliberado) e a resposta sai **somente por escrito**, sem áudio.
 
-Toda resposta é impressa na tela e falada em áudio (pt-BR). Para encerrar:
-diga "Alexa, sair" ou digite "sair".
+Para encerrar: diga "Alexa, sair" ou digite "sair".
+
+Nada disso é obrigatório para o programa funcionar: sem microfone, sem
+bibliotecas de voz ou sem internet, ele continua rodando pelo teclado — a
+análise léxica e semântica não dependem de nada além da biblioteca padrão.
 """
 
 from __future__ import annotations
@@ -28,18 +32,21 @@ import threading
 
 from lexer import analisar_lexico
 from semantic import CasaInteligente, interpretar
-from voice import STT_DISPONIVEL, ErroReconhecimento, OuvidorContinuo, falar
+from voice import STT_DISPONIVEL, ErroReconhecimento, OuvidorContinuo, diagnosticar, falar
 from wakeword import extrair_comando
 
 COMANDOS_DEMO = [
     "Ligar a luz da sala",
-    "Acender a luz do quarto",
+    "Ligar a luz da sala",                     # redundante -> informa o estado atual
+    "Desligar a luz da sala",
+    "Desligar a luz da sala",                  # redundante, no sentido oposto
+    "Acender a luz do quarto",                 # outro local: estado independente
     "Aumentar o ventilador da sala para 60",
+    "Aumentar o ventilador da sala para 40",   # contraditório -> informa o nível
     "Abrir a porta da garagem",
-    "Abrir a luz da sala",     # incompatível -> erro semântico
-    "Diminuir o ar condicionado do quarto",
-    "Fechar a cortina da sala",
-    "Ligar o forno",           # dispositivo desconhecido -> erro semântico
+    "Abrir a porta da garagem",                # redundante
+    "Abrir a luz da sala",                     # incompatível -> erro semântico
+    "Ligar o forno",                           # dispositivo desconhecido
 ]
 
 COMANDOS_SAIR = ("sair", "exit", "quit")
@@ -52,10 +59,15 @@ def processar(frase: str, casa: CasaInteligente, verboso: bool = True) -> str:
     return interpretar(tokens, casa)
 
 
-def _responder(resposta: str) -> None:
-    """Imprime e fala a resposta (todo retorno ao usuário passa por aqui)."""
+def _responder(resposta: str, com_audio: bool) -> None:
+    """Imprime a resposta e, quando `com_audio`, também a fala.
+
+    O áudio é reservado às respostas de comandos **falados**: quem digitou o
+    comando está olhando a tela, e ouvir a resposta em voz alta seria
+    intrusivo."""
     print(f"Alexa: {resposta}")
-    falar(resposta)
+    if com_audio:
+        falar(resposta)
 
 
 def rodar_demo() -> None:
@@ -65,14 +77,23 @@ def rodar_demo() -> None:
         print(f"Alexa: {processar(frase, casa)}")
 
 
-def _thread_teclado(evento_parar: threading.Event, casa: CasaInteligente, trava: threading.Lock) -> None:
+def _thread_teclado(
+    evento_parar: threading.Event, casa: CasaInteligente, trava: threading.Lock
+) -> None:
     """Roda em paralelo à escuta do microfone: aceita comandos digitados
     (sem exigir a palavra-chave) e o "sair", sem precisar esperar o ciclo
-    de escuta atual terminar. Thread daemon: encerra junto com o programa."""
+    de escuta atual terminar. Thread daemon: encerra junto com o programa.
+
+    Respostas daqui saem só por escrito — áudio é para comandos falados."""
     while not evento_parar.is_set():
         try:
             texto = input().strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
+            # stdin não é interativo (entrada redirecionada, execução sem
+            # terminal...). Encerra só a leitura de teclado: a escuta por
+            # voz continua funcionando normalmente.
+            return
+        except KeyboardInterrupt:
             evento_parar.set()
             return
 
@@ -84,7 +105,7 @@ def _thread_teclado(evento_parar: threading.Event, casa: CasaInteligente, trava:
 
         with trava:
             resposta = processar(texto, casa, verboso=False)
-        _responder(resposta)
+        _responder(resposta, com_audio=False)
 
 
 def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
@@ -97,6 +118,9 @@ def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
     falar("Estou ouvindo. Diga Alexa antes do comando.")
 
     evento_parar = threading.Event()
+    # registra se a saída foi pedida por voz, para decidir se a despedida
+    # também deve ser falada
+    saida_por_voz = threading.Event()
     trava = threading.Lock()  # protege o estado da casa contra voz e teclado ao mesmo tempo
     threading.Thread(target=_thread_teclado, args=(evento_parar, casa, trava), daemon=True).start()
 
@@ -120,23 +144,25 @@ def rodar_modo_voz(casa: CasaInteligente, ouvidor: OuvidorContinuo) -> None:
         print(f"Você (voz): {frase_ouvida}")
 
         if not comando:
-            _responder("Diga um comando depois de 'Alexa'.")
+            _responder("Diga um comando depois de 'Alexa'.", com_audio=True)
             continue
 
         if comando.lower() in COMANDOS_SAIR:
+            saida_por_voz.set()
             evento_parar.set()
             break
 
         with trava:
             resposta = processar(comando, casa, verboso=False)
-        _responder(resposta)
+        _responder(resposta, com_audio=True)
 
-    _responder("Até logo!")
+    _responder("Até logo!", com_audio=saida_por_voz.is_set())
     sys.exit(0)
 
 
 def rodar_modo_texto(casa: CasaInteligente) -> None:
-    """Modo somente teclado (sem microfone). Não exige palavra-chave."""
+    """Modo somente teclado (sem microfone). Não exige palavra-chave e não
+    responde em áudio."""
     print("Mini-Alexa de Casa Inteligente (digite 'sair' para encerrar)\n")
 
     while True:
@@ -149,11 +175,11 @@ def rodar_modo_texto(casa: CasaInteligente) -> None:
         if not frase:
             continue
         if frase.lower() in COMANDOS_SAIR:
-            _responder("Até logo!")
+            _responder("Até logo!", com_audio=False)
             break
 
         resposta = processar(frase, casa, verboso=False)
-        _responder(resposta)
+        _responder(resposta, com_audio=False)
 
 
 def rodar_interativo(usar_voz: bool = True) -> None:
@@ -178,7 +204,9 @@ def rodar_interativo(usar_voz: bool = True) -> None:
 
 
 if __name__ == "__main__":
-    if "--demo" in sys.argv:
+    if "--diagnostico" in sys.argv:
+        print(diagnosticar())
+    elif "--demo" in sys.argv:
         rodar_demo()
     elif "--texto" in sys.argv:
         rodar_interativo(usar_voz=False)

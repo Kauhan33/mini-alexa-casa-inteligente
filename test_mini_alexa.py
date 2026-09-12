@@ -59,5 +59,67 @@ class TestSemantic(unittest.TestCase):
         self.assertEqual(self.casa.obter("ventilador", "sala").nivel, 60)
 
 
+class TestEstadoJaAplicado(unittest.TestCase):
+    """Ações redundantes devem informar o estado atual, não fingir que
+    executaram — é análise semântica dependente de contexto."""
+
+    def setUp(self) -> None:
+        self.casa = CasaInteligente()
+
+    def _dizer(self, frase: str) -> str:
+        return interpretar(analisar_lexico(frase), self.casa)
+
+    def test_ligar_luz_ja_acesa(self):
+        primeira = self._dizer("ligar a luz do quarto")
+        self.assertIn("ligando", primeira.lower())
+
+        segunda = self._dizer("ligar a luz do quarto")
+        self.assertEqual(segunda, "A luz do quarto já está acesa.")
+
+    def test_desligar_luz_ja_apagada(self):
+        resposta = self._dizer("desligar a luz do quarto")
+        self.assertEqual(resposta, "A luz do quarto já está apagada.")
+
+    def test_ciclo_completo_liga_desliga(self):
+        self.assertIn("ligando", self._dizer("ligar a luz da sala").lower())
+        self.assertEqual(self._dizer("ligar a luz da sala"), "A luz da sala já está acesa.")
+        self.assertIn("desligando", self._dizer("desligar a luz da sala").lower())
+        self.assertEqual(self._dizer("desligar a luz da sala"), "A luz da sala já está apagada.")
+
+    def test_concordancia_de_genero_e_participio_por_dispositivo(self):
+        self._dizer("abrir a porta da garagem")
+        self.assertEqual(
+            self._dizer("abrir a porta da garagem"), "A porta da garagem já está aberta."
+        )
+
+        self._dizer("ligar o ventilador da sala")
+        self.assertEqual(
+            self._dizer("ligar o ventilador da sala"), "O ventilador da sala já está ligado."
+        )
+
+        self.assertEqual(self._dizer("fechar o portao"), "O portão já está fechado.")
+
+    def test_locais_diferentes_tem_estados_independentes(self):
+        self._dizer("ligar a luz da sala")
+        # a luz do quarto continua apagada, então ligar deve executar
+        self.assertIn("ligando", self._dizer("ligar a luz do quarto").lower())
+
+    def test_nivel_no_maximo_e_no_minimo(self):
+        self._dizer("aumentar o ventilador da sala para 100")
+        self.assertEqual(
+            self._dizer("aumentar o ventilador da sala"), "O ventilador da sala já está no máximo."
+        )
+
+        self._dizer("diminuir o ventilador do quarto")
+        self.assertEqual(
+            self._dizer("diminuir o ventilador do quarto"),
+            "O ventilador do quarto já está no mínimo.",
+        )
+
+    def test_aumentar_para_nivel_menor_que_o_atual(self):
+        self._dizer("aumentar a tv para 80")
+        self.assertEqual(self._dizer("aumentar a tv para 50"), "A tv já está em 80.")
+
+
 if __name__ == "__main__":
     unittest.main()
