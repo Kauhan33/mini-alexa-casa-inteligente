@@ -491,7 +491,33 @@ class JanelaMiniAlexa:
         self.raiz.mainloop()
 
 
+def mostrar_diagnostico() -> None:
+    """`MiniAlexa.exe --diagnostico` (ou `python gui.py --diagnostico`):
+    mostra o que esta máquina tem para voz. No .exe não há console, então o
+    relatório vai para uma caixa de diálogo e para um arquivo ao lado."""
+    from tkinter import messagebox
+
+    from voice import diagnosticar
+
+    relatorio = diagnosticar()
+    try:
+        with open("diagnostico_voz.txt", "w", encoding="utf-8") as arquivo:
+            arquivo.write(relatorio + "\n")
+        relatorio += "\n\n(salvo em diagnostico_voz.txt)"
+    except OSError:
+        pass
+    raiz = tk.Tk()
+    raiz.withdraw()
+    messagebox.showinfo("Diagnóstico de voz", relatorio)
+    raiz.destroy()
+
+
 def main() -> None:
+    import sys
+
+    if "--diagnostico" in sys.argv:
+        mostrar_diagnostico()
+        return
     JanelaMiniAlexa().executar()
 
 

@@ -259,6 +259,25 @@ Digitar, por outro lado, **nunca** precisa da palavra-chave, e funciona em paral
 escuta (thread separada) — então não é preciso esperar o ciclo de escuta atual terminar
 para digitar um comando ou "sair".
 
+## Executável (Windows)
+
+Cada [release](../../releases) traz um **`MiniAlexa.exe`** — um arquivo só, sem precisar de
+Python nem de `pip install`. É a interface gráfica, com voz incluída. Basta baixar e
+abrir (na primeira execução demora alguns segundos: o Windows descompacta o conteúdo).
+
+`MiniAlexa.exe --diagnostico` mostra o que a máquina tem disponível para voz (microfone,
+vozes instaladas, motor online) — útil para checar o ambiente antes de testar.
+
+Para gerar o executável a partir do código:
+
+```bash
+pip install -r requirements.txt pyinstaller
+python build_exe.py        # resultado em dist/MiniAlexa.exe
+```
+
+O Windows Defender às vezes marca executáveis gerados pelo PyInstaller como suspeitos
+(falso positivo comum); se acontecer, "Mais informações → Executar assim mesmo".
+
 ## Testes
 
 ```bash
